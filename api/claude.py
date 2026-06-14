@@ -1,56 +1,64 @@
 """
 api/claude.py
 
-Vercel serverless function that proxies requests to the Anthropic API.
-The ANTHROPIC_API_KEY is read from Vercel's Environment Variables (set in
-the Vercel dashboard, NEVER hardcoded here).
+Vercel serverless function (Python) that proxies requests to the Anthropic API.
+ANTHROPIC_API_KEY is read from Vercel's Environment Variables.
+
+Vercel's Python runtime expects a BaseHTTPRequestHandler subclass named
+`handler` -- this is the format Vercel actually detects and runs.
 """
 
 import os
 import json
+from http.server import BaseHTTPRequestHandler
 from anthropic import Anthropic
 
-client = Anthropic()  # reads ANTHROPIC_API_KEY from env (set in Vercel dashboard)
 
+class handler(BaseHTTPRequestHandler):
 
-def handler(request):
-    if request.method == "OPTIONS":
-        return _response(200, {})
+    def do_OPTIONS(self):
+        self._send_cors_headers(200)
 
-    if request.method != "POST":
-        return _response(405, {"error": "Method not allowed"})
+    def do_POST(self):
+        content_length = int(self.headers.get("Content-Length", 0))
+        body_raw = self.rfile.read(content_length)
 
-    try:
-        body = json.loads(request.body)
-    except Exception:
-        return _response(400, {"error": "Invalid JSON body"})
+        try:
+            body = json.loads(body_raw)
+        except Exception:
+            self._send_json(400, {"error": "Invalid JSON body"})
+            return
 
-    system_prompt = body.get("system", "")
-    user_prompt = body.get("prompt", "")
-    max_tokens = body.get("max_tokens", 500)
+        system_prompt = body.get("system", "")
+        user_prompt = body.get("prompt", "")
+        max_tokens = body.get("max_tokens", 500)
 
-    try:
-        message = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=max_tokens,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        text = message.content[0].text
-        return _response(200, {"text": text})
+        try:
+            client = Anthropic()  # reads ANTHROPIC_API_KEY from env
+            message = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+            text = message.content[0].text
+            self._send_json(200, {"text": text})
 
-    except Exception as e:
-        return _response(500, {"error": str(e)})
+        except Exception as e:
+            self._send_json(500, {"error": str(e)})
 
+    def _send_cors_headers(self, status):
+        self.send_response(status)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
 
-def _response(status, body_dict):
-    return {
-        "statusCode": status,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
-        },
-        "body": json.dumps(body_dict),
-    }
+    def _send_json(self, status, body_dict):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+        self.wfile.write(json.dumps(body_dict).encode())
