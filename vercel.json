@@ -1,13 +1,5 @@
 {
   "rewrites": [
-    {
-      "source": "/",
-      "destination": "/dashboard.html"
-    }
-  ],
-  "functions": {
-    "api/claude.py": {
-      "runtime": "python3.12"
-    }
-  }
+    { "source": "/", "destination": "/dashboard.html" }
+  ]
 }
