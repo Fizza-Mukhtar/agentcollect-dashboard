@@ -1,17 +1,18 @@
 """
 api/claude.py
 
-Vercel serverless function (Python) that proxies requests to the Anthropic API.
-ANTHROPIC_API_KEY is read from Vercel's Environment Variables.
+Vercel serverless function that proxies requests to the Groq API
+(instead of Anthropic). GROQ_API_KEY is read from Vercel's Environment
+Variables.
 
-Vercel's Python runtime expects a BaseHTTPRequestHandler subclass named
-`handler` -- this is the format Vercel actually detects and runs.
+Note: filename kept as claude.py so the existing /api/claude route in
+dashboard.html doesn't need to change.
 """
 
 import os
 import json
 from http.server import BaseHTTPRequestHandler
-from anthropic import Anthropic
+from groq import Groq
 
 
 class handler(BaseHTTPRequestHandler):
@@ -34,14 +35,16 @@ class handler(BaseHTTPRequestHandler):
         max_tokens = body.get("max_tokens", 500)
 
         try:
-            client = Anthropic()  # reads ANTHROPIC_API_KEY from env
-            message = client.messages.create(
-                model="claude-sonnet-4-6",
+            client = Groq()  # reads GROQ_API_KEY from env
+            completion = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
                 max_tokens=max_tokens,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
             )
-            text = message.content[0].text
+            text = completion.choices[0].message.content
             self._send_json(200, {"text": text})
 
         except Exception as e:
